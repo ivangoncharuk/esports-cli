@@ -120,6 +120,10 @@ function filterByLeague(matches: Match[], league: string): Match[] {
   );
 }
 
+function filterLiveMatches(matches: Match[]): Match[] {
+  return matches.filter((match) => match.status === "live");
+}
+
 
 function displayMatchDetails(match: Match): void {
   console.log(bold(green(`\nMatch: ${match.name}`)));
@@ -180,7 +184,7 @@ async function mainMenu() {
 
   const action = await Select.prompt({
     message: "Select an action:",
-    options: ["Fetch New Data", "Filter by Game", "Filter by League", "View All Matches", "Exit"],
+    options: ["Fetch New Data", "Filter by Game", "Filter by League", "View Live Matches", "View All Matches", "Exit"],
   });
 
   switch (action) {
@@ -211,6 +215,15 @@ async function mainMenu() {
         await matchListMenu(filteredMatches);
       } else {
         console.log(red(`\nNo matches found for league "${league}".`));
+      }
+      break;
+    }
+    case "View Live Matches": {
+      const liveMatches = filterLiveMatches(matches);
+      if (liveMatches.length > 0) {
+        await matchListMenu(liveMatches);
+      } else {
+        console.log(red("\nNo live matches currently available."));
       }
       break;
     }
