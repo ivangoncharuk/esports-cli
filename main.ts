@@ -114,6 +114,13 @@ function filterByGame(matches: Match[], game: string): Match[] {
   );
 }
 
+function filterByLeague(matches: Match[], league: string): Match[] {
+  return matches.filter((match) =>
+    match.league.name.toLowerCase().includes(league.toLowerCase())
+  );
+}
+
+
 function displayMatchDetails(match: Match): void {
   console.log(bold(green(`\nMatch: ${match.name}`)));
   console.log(`${bold("Game:")} ${cyan(match.videogame.name)}`);
@@ -173,7 +180,7 @@ async function mainMenu() {
 
   const action = await Select.prompt({
     message: "Select an action:",
-    options: ["Fetch New Data", "Filter by Game", "View All Matches", "Exit"],
+    options: ["Fetch New Data", "Filter by Game", "Filter by League", "View All Matches", "Exit"],
   });
 
   switch (action) {
@@ -196,6 +203,18 @@ async function mainMenu() {
       }
       break;
     }
+
+    case "Filter by League": {
+      const league = await Input.prompt("Enter the league name:");
+      const filteredMatches = filterByLeague(matches, league);
+      if (filteredMatches.length > 0) {
+        await matchListMenu(filteredMatches);
+      } else {
+        console.log(red(`\nNo matches found for league "${league}".`));
+      }
+      break;
+    }
+    
 
     case "View All Matches":
       await matchListMenu(matches);
