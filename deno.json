@@ -4,8 +4,6 @@
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
-    "inquirer/": "https://deno.land/x/inquirer@v0.0.4/",
-    "colors/": "https://deno.land/std@0.203.0/fmt/colors.ts"
+    "cliffy/": "https://deno.land/x/cliffy@v0.25.7/"
   }
-  
 }
