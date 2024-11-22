@@ -35,6 +35,10 @@ interface Match {
       location?: string;
     };
   }[];
+  results?: {
+    team_id: number;
+    score: number;
+  }[]; // Optional, as some matches might not have results
 }
 
 async function ensureDirectoryExists(filePath: string) {
@@ -89,7 +93,7 @@ async function fetchIfNeeded<T>(
 
   if (await exists(snapshotFile)) {
     const snapshot = await Deno.readTextFile(snapshotFile);
-    const { lastFetched, data } = JSON.parse(snapshot);
+    const { lastFetched, _ } = JSON.parse(snapshot);
     const elapsedMinutes =
       (new Date().getTime() - new Date(lastFetched).getTime()) / 60000;
 
@@ -97,13 +101,20 @@ async function fetchIfNeeded<T>(
       console.log(
         yellow(`Data is recent (${Math.floor(elapsedMinutes)} minutes ago).`),
       );
-      return { lastFetched, data };
+      console.log(
+        red(
+          `Please wait ${
+            Math.ceil(cooldownMinutes - elapsedMinutes)
+          } minutes to fetch again.`,
+        ),
+      );
+      return null; // Explicitly return null when cooldown is active
     }
   }
 
+  // Fetch new data if cooldown has expired
   return await fetchEsportsData<T>(endpoint, false);
 }
-
 
 function timeSince(lastFetched: string): string {
   const now = new Date();
@@ -157,6 +168,7 @@ function displayMatchDetails(match: Match): void {
   console.log(`${bold("Game:")} ${cyan(match.videogame.name)}`);
   console.log(`${bold("League:")} ${yellow(match.league.name)}`);
   console.log(`${bold("Tournament:")} ${yellow(match.tournament.name)}`);
+  console.log(`${bold("Status:")} ${match.status}`);
   console.log(
     `${bold("Scheduled At:")} ${new Date(match.scheduled_at).toLocaleString()}`,
   );
@@ -169,6 +181,20 @@ function displayMatchDetails(match: Match): void {
       } ${team.opponent.location ? `- ${green(team.opponent.location)}` : ""}`,
     );
   });
+
+  if (match.results && match.results.length > 0) {
+    console.log(bold("\nResults:"));
+    match.results.forEach((result) => {
+      const teamName = match.opponents.find(
+        (op) => op.opponent.id === result.team_id,
+      )?.opponent.name ?? "Unknown";
+      console.log(`${cyan(teamName)}: ${yellow(result.score.toString())}`);
+    });
+  } else {
+    console.log(bold("\nResults: No results available."));
+  }
+
+  console.log("\n");
 }
 
 async function matchListMenu(matches: Match[]) {
@@ -231,19 +257,21 @@ async function mainMenu() {
   });
 
   switch (action) {
-    // deno-lint-ignore no-case-declarations
-    case "Fetch New Data":
+    case "Fetch New Data": {
       const cooldownMinutes = 10; // Set the desired cooldown time here
       console.log("Checking if data fetch is needed...");
-      const newResponse = await fetchIfNeeded<Match[]>("/matches/upcoming", cooldownMinutes);
-      
+      const newResponse = await fetchIfNeeded<Match[]>(
+        "/matches/upcoming",
+        cooldownMinutes,
+      );
+
       if (newResponse) {
         console.log(green("New data fetched and snapshot updated."));
       } else {
         console.log(red("Cooldown active. Data fetch skipped."));
       }
       break;
-    
+    }
 
     case "Filter by Game": {
       const game = await Input.prompt(
