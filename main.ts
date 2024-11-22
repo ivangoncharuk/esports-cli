@@ -52,7 +52,6 @@ async function saveSnapshot(data: unknown, filename: string = "snapshot.json") {
   console.log(`Snapshot saved to ${filename}`);
 }
 
-
 async function fetchEsportsData<T>(
   endpoint: string,
   useSnapshot: boolean = false,
@@ -82,6 +81,30 @@ async function fetchEsportsData<T>(
   return { lastFetched: new Date().toISOString(), data };
 }
 
+async function fetchIfNeeded<T>(
+  endpoint: string,
+  cooldownMinutes: number = 10,
+): Promise<{ lastFetched: string; data: T } | null> {
+  const snapshotFile = `snapshot_${endpoint.replace("/", "_")}.json`;
+
+  if (await exists(snapshotFile)) {
+    const snapshot = await Deno.readTextFile(snapshotFile);
+    const { lastFetched, data } = JSON.parse(snapshot);
+    const elapsedMinutes =
+      (new Date().getTime() - new Date(lastFetched).getTime()) / 60000;
+
+    if (elapsedMinutes < cooldownMinutes) {
+      console.log(
+        yellow(`Data is recent (${Math.floor(elapsedMinutes)} minutes ago).`),
+      );
+      return { lastFetched, data };
+    }
+  }
+
+  return await fetchEsportsData<T>(endpoint, false);
+}
+
+
 function timeSince(lastFetched: string): string {
   const now = new Date();
   const last = new Date(lastFetched);
@@ -92,7 +115,6 @@ function timeSince(lastFetched: string): string {
 
   return `${hours}hr${minutes}m`;
 }
-
 
 // async function displayUpcomingMatches() {
 //   const matches: Match[] = await fetchEsportsData("/matches/upcoming", true);
@@ -124,6 +146,11 @@ function filterLiveMatches(matches: Match[]): Match[] {
   return matches.filter((match) => match.status === "live");
 }
 
+function searchMatches(matches: Match[], query: string): Match[] {
+  return matches.filter((match) =>
+    match.name.toLowerCase().includes(query.toLowerCase())
+  );
+}
 
 function displayMatchDetails(match: Match): void {
   console.log(bold(green(`\nMatch: ${match.name}`)));
@@ -180,25 +207,48 @@ async function mainMenu() {
   const { lastFetched, data: matches } = response;
   const elapsedTime = timeSince(lastFetched);
 
-  console.log(bold(green(`\nLast Fetch: ${new Date(lastFetched).toLocaleString()} (${elapsedTime} ago)`)));
+  console.log(
+    bold(
+      green(
+        `\nLast Fetch: ${
+          new Date(lastFetched).toLocaleString()
+        } (${elapsedTime} ago)`,
+      ),
+    ),
+  );
 
   const action = await Select.prompt({
     message: "Select an action:",
-    options: ["Fetch New Data", "Filter by Game", "Filter by League", "View Live Matches", "View All Matches", "Exit"],
+    options: [
+      "Fetch New Data",
+      "Filter by Game",
+      "Filter by League",
+      "View Live Matches",
+      "Search Matches",
+      "View All Matches",
+      "Exit",
+    ],
   });
 
   switch (action) {
     // deno-lint-ignore no-case-declarations
     case "Fetch New Data":
-      console.log("Fetching new data...");
-      const newResponse = await fetchEsportsData<Match[]>("/matches/upcoming", false);
+      const cooldownMinutes = 10; // Set the desired cooldown time here
+      console.log("Checking if data fetch is needed...");
+      const newResponse = await fetchIfNeeded<Match[]>("/matches/upcoming", cooldownMinutes);
+      
       if (newResponse) {
         console.log(green("New data fetched and snapshot updated."));
+      } else {
+        console.log(red("Cooldown active. Data fetch skipped."));
       }
       break;
+    
 
     case "Filter by Game": {
-      const game = await Input.prompt("Enter the game name (e.g., Counter-Strike):");
+      const game = await Input.prompt(
+        "Enter the game name (e.g., Counter-Strike):",
+      );
       const filteredMatches = filterByGame(matches, game);
       if (filteredMatches.length > 0) {
         await matchListMenu(filteredMatches);
@@ -218,6 +268,16 @@ async function mainMenu() {
       }
       break;
     }
+    case "Search Matches": {
+      const query = await Input.prompt("Enter part of the match name:");
+      const searchResults = searchMatches(matches, query);
+      if (searchResults.length > 0) {
+        await matchListMenu(searchResults);
+      } else {
+        console.log(red(`\nNo matches found for "${query}".`));
+      }
+      break;
+    }
     case "View Live Matches": {
       const liveMatches = filterLiveMatches(matches);
       if (liveMatches.length > 0) {
@@ -227,8 +287,6 @@ async function mainMenu() {
       }
       break;
     }
-    
-
     case "View All Matches":
       await matchListMenu(matches);
       break;
@@ -240,7 +298,6 @@ async function mainMenu() {
 
   await mainMenu(); // Loop back to the main menu
 }
-
 
 async function main() {
   await mainMenu();
