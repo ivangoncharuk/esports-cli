@@ -43,21 +43,26 @@ async function ensureDirectoryExists(filePath: string) {
 }
 
 async function saveSnapshot(data: unknown, filename: string = "snapshot.json") {
+  const snapshot = {
+    lastFetched: new Date().toISOString(),
+    data,
+  };
   await ensureDirectoryExists(filename);
-  await Deno.writeTextFile(filename, JSON.stringify(data, null, 2));
+  await Deno.writeTextFile(filename, JSON.stringify(snapshot, null, 2));
   console.log(`Snapshot saved to ${filename}`);
 }
+
 
 async function fetchEsportsData<T>(
   endpoint: string,
   useSnapshot: boolean = false,
-): Promise<T> {
+): Promise<{ lastFetched: string; data: T } | null> {
   const snapshotFile = `snapshot_${endpoint.replace("/", "_")}.json`;
 
   if (useSnapshot && (await exists(snapshotFile))) {
-    console.log(`Using snapshot: ${snapshotFile}`);
     const snapshot = await Deno.readTextFile(snapshotFile);
-    return JSON.parse(snapshot) as T;
+    const { lastFetched, data } = JSON.parse(snapshot);
+    return { lastFetched, data };
   }
 
   console.log("Fetching data from API...");
@@ -69,13 +74,25 @@ async function fetchEsportsData<T>(
 
   if (!response.ok) {
     console.error(`Error: ${response.status} ${response.statusText}`);
-    return null as unknown as T;
+    return null;
   }
 
   const data = await response.json();
   await saveSnapshot(data, snapshotFile);
-  return data;
+  return { lastFetched: new Date().toISOString(), data };
 }
+
+function timeSince(lastFetched: string): string {
+  const now = new Date();
+  const last = new Date(lastFetched);
+  const diffMs = now.getTime() - last.getTime();
+
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+  return `${hours}hr${minutes}m`;
+}
+
 
 // async function displayUpcomingMatches() {
 //   const matches: Match[] = await fetchEsportsData("/matches/upcoming", true);
@@ -142,23 +159,35 @@ async function matchListMenu(matches: Match[]) {
 }
 
 async function mainMenu() {
-  const matches = await fetchEsportsData<Match[]>("/matches/upcoming", true);
+  const response = await fetchEsportsData<Match[]>("/matches/upcoming", true);
 
-  if (!matches || matches.length === 0) {
+  if (!response || !response.data || response.data.length === 0) {
     console.log(red("No matches found."));
     return;
   }
 
+  const { lastFetched, data: matches } = response;
+  const elapsedTime = timeSince(lastFetched);
+
+  console.log(bold(green(`\nLast Fetch: ${new Date(lastFetched).toLocaleString()} (${elapsedTime} ago)`)));
+
   const action = await Select.prompt({
     message: "Select an action:",
-    options: ["Filter by Game", "View All Matches", "Exit"],
+    options: ["Fetch New Data", "Filter by Game", "View All Matches", "Exit"],
   });
 
   switch (action) {
+    // deno-lint-ignore no-case-declarations
+    case "Fetch New Data":
+      console.log("Fetching new data...");
+      const newResponse = await fetchEsportsData<Match[]>("/matches/upcoming", false);
+      if (newResponse) {
+        console.log(green("New data fetched and snapshot updated."));
+      }
+      break;
+
     case "Filter by Game": {
-      const game = await Input.prompt(
-        "Enter the game name (e.g., Counter-Strike):",
-      );
+      const game = await Input.prompt("Enter the game name (e.g., Counter-Strike):");
       const filteredMatches = filterByGame(matches, game);
       if (filteredMatches.length > 0) {
         await matchListMenu(filteredMatches);
@@ -167,6 +196,7 @@ async function mainMenu() {
       }
       break;
     }
+
     case "View All Matches":
       await matchListMenu(matches);
       break;
@@ -178,6 +208,7 @@ async function mainMenu() {
 
   await mainMenu(); // Loop back to the main menu
 }
+
 
 async function main() {
   await mainMenu();
